@@ -2,11 +2,15 @@ mod error;
 mod models {
     pub mod ingestion;
 }
+mod services {
+    pub mod ingestion;
+}
 
 pub use error::IngestionError;
 pub use models::ingestion::{
     ExtractedFrame, IngestionConfig, IngestionProgress, IngestionResult, VideoMetadata,
 };
+pub use services::ingestion::{extract_audio, extract_frames, probe_video};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
