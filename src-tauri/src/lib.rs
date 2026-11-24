@@ -1,3 +1,4 @@
+mod commands;
 mod error;
 mod models {
     pub mod ingestion;
@@ -12,6 +13,9 @@ pub use models::ingestion::{
 };
 pub use services::ingestion::{extract_audio, extract_frames, probe_video};
 
+// Re-export commands for Tauri
+pub use commands::ingest::ingest_video;
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -22,7 +26,7 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![greet, ingest_video])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
