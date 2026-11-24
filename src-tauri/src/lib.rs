@@ -2,14 +2,22 @@ mod commands;
 mod error;
 mod models {
     pub mod ingestion;
+    pub mod transcription;
 }
 mod services {
+    pub mod db;
     pub mod ingestion;
 }
 
-pub use error::IngestionError;
+pub use error::{AiPipelineError, IngestionError};
 pub use models::ingestion::{
     ExtractedFrame, IngestionConfig, IngestionProgress, IngestionResult, VideoMetadata,
+};
+pub use models::transcription::{
+    SearchHit, TranscriptionProgress, TranscriptionResult, TranscriptionSegment,
+};
+pub use services::db::{
+    init_project_db, save_frames, save_metadata, save_segments, search_text,
 };
 pub use services::ingestion::{extract_audio, extract_frames, probe_video};
 
