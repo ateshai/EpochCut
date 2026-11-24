@@ -1,3 +1,13 @@
+mod error;
+mod models {
+    pub mod ingestion;
+}
+
+pub use error::IngestionError;
+pub use models::ingestion::{
+    ExtractedFrame, IngestionConfig, IngestionProgress, IngestionResult, VideoMetadata,
+};
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
