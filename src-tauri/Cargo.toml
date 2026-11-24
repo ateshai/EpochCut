@@ -27,7 +27,11 @@ thiserror = "1"
 
 uuid = { version = "1", features = ["v4", "serde"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
 
+# Audio transcription
+whisper-rs = "0.16"
+hound = "3.5"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

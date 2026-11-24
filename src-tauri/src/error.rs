@@ -39,3 +39,15 @@ impl From<IngestionError> for AiPipelineError {
         }
     }
 }
+
+impl From<AiPipelineError> for IngestionError {
+    fn from(err: AiPipelineError) -> Self {
+        match err {
+            AiPipelineError::AudioNotFound(msg) => IngestionError::AudioExtractionFailed(msg),
+            AiPipelineError::ModelNotFound(msg) => IngestionError::AudioExtractionFailed(msg),
+            AiPipelineError::InferenceFailed(msg) => IngestionError::FrameExtractionFailed(msg),
+            AiPipelineError::Database(e) => IngestionError::AudioExtractionFailed(e.to_string()),
+            AiPipelineError::Io(e) => IngestionError::Io(e),
+        }
+    }
+}

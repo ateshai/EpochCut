@@ -7,6 +7,7 @@ mod models {
 mod services {
     pub mod db;
     pub mod ingestion;
+    pub mod whisper;
 }
 
 pub use error::{AiPipelineError, IngestionError};
@@ -20,6 +21,7 @@ pub use services::db::{
     init_project_db, save_frames, save_metadata, save_segments, search_text,
 };
 pub use services::ingestion::{extract_audio, extract_frames, probe_video};
+pub use services::whisper::{decode_wav_to_samples, transcribe_audio, has_valid_audio};
 
 // Re-export commands for Tauri
 pub use commands::ingest::ingest_video;
