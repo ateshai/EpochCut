@@ -25,7 +25,7 @@ export async function ingestVideo(
 /**
  * Listen to ingestion progress events.
  * @param callback - Function to call with each progress update
- * @returns Unlisten function to stop listening
+ * @returns Promise resolving to unlisten function to stop listening
  */
 export function onIngestionProgress(
   callback: (progress: IngestionProgress) => void

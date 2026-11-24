@@ -1,9 +1,6 @@
-use std::path::Path;
-
 use crate::error::IngestionError;
-use crate::models::ingestion::{IngestionConfig, IngestionProgress, IngestionResult, VideoMetadata};
+use crate::models::ingestion::{IngestionConfig, IngestionProgress, IngestionResult};
 use crate::services::ingestion::{extract_audio, extract_frames, probe_video};
-use chrono::Utc;
 use uuid::Uuid;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -14,7 +11,7 @@ fn generate_job_id() -> String {
 
 /// Create job directory structure
 fn create_job_directory(app: &AppHandle, job_id: &str) -> Result<std::path::PathBuf, IngestionError> {
-    let app_data_dir = app.path().app_data_dir().ok_or_else(|| {
+    let app_data_dir = app.path().app_data_dir().map_err(|_| {
         IngestionError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             "App data directory not found",
@@ -39,10 +36,7 @@ fn create_job_directory(app: &AppHandle, job_id: &str) -> Result<std::path::Path
     Ok(project_dir)
 }
 
-/// Convert PathBuf to String for IPC
-fn path_to_string(path: &std::path::Path) -> String {
-    path.to_string_lossy().to_string()
-}
+
 
 /// Main ingestion command that orchestrates the entire pipeline
 #[tauri::command]
@@ -69,16 +63,16 @@ pub fn ingest_video(
     let frames_dir = job_dir.join("frames");
     
     // Emit initial probing event
-    let _ = app.emit_all("ingestion-progress", IngestionProgress::Probing { progress: 0.0 });
+    let _ = app.emit("ingestion-progress", IngestionProgress::Probing { progress: 0.0 });
     
     // Step 1: Probe video metadata
     let metadata = match probe_video(source_path) {
         Ok(m) => {
-            let _ = app.emit_all("ingestion-progress", IngestionProgress::Probing { progress: 1.0 });
+            let _ = app.emit("ingestion-progress", IngestionProgress::Probing { progress: 1.0 });
             m
         }
         Err(e) => {
-            let _ = app.emit_all("ingestion-progress", IngestionProgress::Failed {
+            let _ = app.emit("ingestion-progress", IngestionProgress::Failed {
                 error_message: format!("Failed to probe video: {}", e),
             });
             return Err(format!("Failed to probe video: {}", e));
@@ -87,21 +81,21 @@ pub fn ingest_video(
     
     // Step 2: Extract audio
     let audio_path = audio_dir.join("track_16k_mono.wav");
-    let _ = app.emit_all("ingestion-progress", IngestionProgress::ExtractingAudio { progress: 0.0 });
+    let _ = app.emit("ingestion-progress", IngestionProgress::ExtractingAudio { progress: 0.0 });
     
     if let Err(e) = extract_audio(source_path, &audio_path) {
-        let _ = app.emit_all("ingestion-progress", IngestionProgress::Failed {
+        let _ = app.emit("ingestion-progress", IngestionProgress::Failed {
             error_message: format!("Failed to extract audio: {}", e),
         });
         return Err(format!("Failed to extract audio: {}", e));
     }
     
-    let _ = app.emit_all("ingestion-progress", IngestionProgress::ExtractingAudio { progress: 1.0 });
+    let _ = app.emit("ingestion-progress", IngestionProgress::ExtractingAudio { progress: 1.0 });
     
     // Step 3: Extract frames
     let total_frames = (metadata.duration_seconds / config.interval_seconds).ceil() as usize;
     
-    let _ = app.emit_all("ingestion-progress", IngestionProgress::ExtractingFrames {
+    let _ = app.emit("ingestion-progress", IngestionProgress::ExtractingFrames {
         progress: 0.0,
         current_frame: 0,
         total_frames,
@@ -109,7 +103,7 @@ pub fn ingest_video(
     
     let frames = match extract_frames(source_path, &frames_dir, config.interval_seconds) {
         Ok(f) => {
-            let _ = app.emit_all("ingestion-progress", IngestionProgress::ExtractingFrames {
+            let _ = app.emit("ingestion-progress", IngestionProgress::ExtractingFrames {
                 progress: 1.0,
                 current_frame: f.len(),
                 total_frames,
@@ -117,7 +111,7 @@ pub fn ingest_video(
             f
         }
         Err(e) => {
-            let _ = app.emit_all("ingestion-progress", IngestionProgress::Failed {
+            let _ = app.emit("ingestion-progress", IngestionProgress::Failed {
                 error_message: format!("Failed to extract frames: {}", e),
             });
             return Err(format!("Failed to extract frames: {}", e));
@@ -133,7 +127,7 @@ pub fn ingest_video(
     };
     
     // Emit complete event
-    let _ = app.emit_all("ingestion-progress", IngestionProgress::Complete { result: result.clone() });
+    let _ = app.emit("ingestion-progress", IngestionProgress::Complete { result: result.clone() });
     
     Ok(result)
 }

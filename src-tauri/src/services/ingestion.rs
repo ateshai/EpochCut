@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use crate::error::IngestionError;
@@ -19,7 +19,7 @@ pub fn probe_video(path: &Path) -> Result<VideoMetadata, IngestionError> {
             "json",
             "-show_format",
             "-show_streams",
-            path.as_os_str(),
+            path.to_str().unwrap_or(""),
         ])
         .output()
         .map_err(|e| IngestionError::ProbeFailed(e.to_string()))?;
@@ -121,7 +121,10 @@ pub fn probe_video(path: &Path) -> Result<VideoMetadata, IngestionError> {
 
 /// Parse FPS from a string that may be a fraction (e.g., "30000/1001")
 fn parse_fps(fps_str: Option<&str>) -> Option<f64> {
-    fps_str?.split_once('/')?.parse::<f64>().ok()
+    let (num, den) = fps_str?.split_once('/')?;
+    let numerator = num.parse::<f64>().ok()?;
+    let denominator = den.parse::<f64>().ok()?;
+    Some(numerator / denominator)
 }
 
 /// Extract audio track from video file using ffmpeg.
@@ -137,7 +140,7 @@ pub fn extract_audio(source: &Path, destination: &Path) -> Result<(), IngestionE
         .args([
             "-y",
             "-i",
-            source.as_os_str(),
+            source.to_str().unwrap_or(""),
             "-vn",
             "-acodec",
             "pcm_s16le",
@@ -145,7 +148,7 @@ pub fn extract_audio(source: &Path, destination: &Path) -> Result<(), IngestionE
             "16000",
             "-ac",
             "1",
-            destination.as_os_str(),
+            destination.to_str().unwrap_or(""),
         ])
         .output()
         .map_err(|e| IngestionError::AudioExtractionFailed(e.to_string()))?;
@@ -171,7 +174,7 @@ pub fn extract_frames(
         .map_err(|e| IngestionError::FrameExtractionFailed(e.to_string()))?;
 
     // Calculate FPS from interval (1 frame per N seconds)
-    let fps = if interval_seconds > 0.0 { 1.0 / interval_seconds } else { 0.25 };
+    let _fps = if interval_seconds > 0.0 { 1.0 / interval_seconds } else { 0.25 };
 
     // Build ffmpeg command for frame extraction
     // fps=1/4 = 1 frame every 4 seconds
@@ -186,12 +189,12 @@ pub fn extract_frames(
         .args([
             "-y",
             "-i",
-            source.as_os_str(),
+            source.to_str().unwrap_or(""),
             "-vf",
             &vf,
             "-q:v",
             "3",
-            output_pattern.as_os_str(),
+            output_pattern.to_str().unwrap_or(""),
         ])
         .output()
         .map_err(|e| IngestionError::FrameExtractionFailed(e.to_string()))?;
