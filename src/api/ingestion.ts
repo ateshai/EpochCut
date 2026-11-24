@@ -16,10 +16,18 @@ export async function ingestVideo(
   filePath: string,
   config?: IngestionConfig
 ): Promise<IngestionResult> {
-  return await invoke<IngestionResult>('ingest_video', {
-    filePath,
-    config,
-  });
+  console.log('[API] Calling ingest_video with filePath:', filePath, 'config:', config);
+  try {
+    const res = await invoke<IngestionResult>('ingest_video', {
+      filePath,
+      config,
+    });
+    console.log('[API] ingest_video succeeded:', res);
+    return res;
+  } catch (err: any) {
+    console.error('[API] ingest_video failed:', err);
+    throw err;
+  }
 }
 
 /**

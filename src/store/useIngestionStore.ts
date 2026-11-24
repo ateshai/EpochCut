@@ -24,10 +24,14 @@ export const useIngestionStore = create<IngestionState & IngestionActions>((set,
   error: null,
 
   startIngestion: async (filePath: string, config?: IngestionConfig) => {
+    console.log('[STORE] Starting ingestion for:', filePath);
+    console.log('[STORE] Config:', config);
+    
     set({ isIngesting: true, error: null, result: null, currentStage: 'probing', progressPercentage: 0 });
 
     // Set up event listener first
     const unlisten = await onIngestionProgress((progress: IngestionProgress) => {
+      console.log('[STORE] Received progress:', progress);
       switch (progress.stage) {
         case 'probing':
           set({ currentStage: 'probing', progressPercentage: progress.payload.progress * 100 });
@@ -40,6 +44,10 @@ export const useIngestionStore = create<IngestionState & IngestionActions>((set,
             currentStage: 'extractingFrames', 
             progressPercentage: progress.payload.progress * 100 
           });
+          break;
+        case 'info':
+          console.log('[STORE] Info:', progress.payload.message);
+          // Just log info messages, don't change state
           break;
         case 'complete':
           set({ 
@@ -66,8 +74,11 @@ export const useIngestionStore = create<IngestionState & IngestionActions>((set,
 
     try {
       // Trigger the ingestion command
-      await ingestVideo(filePath, config);
+      console.log('[STORE] Invoking ingest_video with:', filePath, 'config:', config);
+      const res = await ingestVideo(filePath, config);
+      console.log('[STORE] Ingestion succeeded:', res);
     } catch (err: any) {
+      console.error('[STORE] Ingestion invoke failed:', err);
       set({ 
         isIngesting: false, 
         error: err?.message || 'Ingestion failed',

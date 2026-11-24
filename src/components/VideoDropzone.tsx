@@ -3,6 +3,8 @@ import { useIngestionStore } from '../store/useIngestionStore';
 import type { IngestionProgress } from '../types/ingestion';
 import { onIngestionProgress } from '../api/ingestion';
 import type { UnlistenFn } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-dialog';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 
 const ALLOWED_EXTENSIONS = ['.mp4', '.mkv', '.mov'];
 
@@ -14,9 +16,11 @@ const formatDuration = (seconds: number): string => {
 
 const VideoDropzone = () => {
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const unlistenFn = useRef<UnlistenFn | null>(null);
+  const dropUnlistenFn = useRef<UnlistenFn | null>(null);
   
   const { 
     isIngesting, 
@@ -34,16 +38,17 @@ const VideoDropzone = () => {
       if (unlistenFn.current) {
         unlistenFn.current();
       }
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
+      if (dropUnlistenFn.current) {
+        dropUnlistenFn.current();
       }
     };
-  }, [previewUrl]);
+  }, []);
 
   // Listen to ingestion progress events
   useEffect(() => {
     if (isIngesting && !unlistenFn.current) {
       onIngestionProgress((progress: IngestionProgress) => {
+        console.log('Ingestion progress:', progress);
         switch (progress.stage) {
           case 'probing':
             resetStore();
@@ -67,59 +72,113 @@ const VideoDropzone = () => {
     }
   }, [isIngesting, resetStore]);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
+  // Handle native drag-and-drop events from Tauri
+  useEffect(() => {
+    const setupDragDropHandler = async () => {
+      try {
+        const webview = getCurrentWebview();
+        
+        dropUnlistenFn.current = await webview.onDragDropEvent((event) => {
+          console.log('Drag drop event received:', event);
+          
+          if (event.payload.type === 'drop') {
+            console.log('Files dropped, paths:', event.payload.paths);
+            
+            const droppedPath = event.payload.paths[0];
+            if (droppedPath) {
+              console.log('Processing dropped file path:', droppedPath);
+              handleFileSelect(droppedPath);
+            }
+          } else if (event.payload.type === 'enter') {
+            setIsDragging(true);
+          } else if (event.payload.type === 'leave' || event.payload.type === 'over') {
+            setIsDragging(false);
+          }
+        });
+        
+        console.log('Drag drop event listener attached to webview');
+      } catch (err) {
+        console.error('Failed to set up drag drop handler:', err);
+      }
+    };
     
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) {
-      processFile(droppedFile);
-    }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      processFile(file);
-    }
-  };
-
-  const processFile = (file: File) => {
-    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-    if (!ALLOWED_EXTENSIONS.includes(ext || '')) {
-      alert(`Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`);
-      return;
-    }
-
-    setSelectedFile(file);
+    setupDragDropHandler();
     
-    // Create preview URL from blob
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
+    return () => {
+      if (dropUnlistenFn.current) {
+        dropUnlistenFn.current();
+        console.log('Drag drop event listener removed');
+      }
+    };
+  }, []);
+
+  const handleFileSelect = async (filePath?: string) => {
+    try {
+      setDialogError(null);
+      
+      let selectedPath = filePath;
+      
+      if (!selectedPath) {
+        console.log('Opening file dialog...');
+        
+        const result = await open({
+          multiple: false,
+          filters: [{
+            name: 'Video Files',
+            extensions: ['mp4', 'mkv', 'mov']
+          }]
+        });
+        
+        console.log('Dialog result:', result);
+        
+        if (result === null) {
+          console.log('No file selected');
+          return;
+        }
+        
+        selectedPath = result;
+        console.log('Selected file path:', selectedPath);
+      }
+      
+      // Validate file extension
+      const ext = selectedPath.split('.').pop()?.toLowerCase();
+      if (!ext || !ALLOWED_EXTENSIONS.includes('.' + ext)) {
+        const errorMsg = `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`;
+        console.error(errorMsg);
+        setDialogError(errorMsg);
+        return;
+      }
+      
+      // Extract file name from path
+      const fileNameFromPath = selectedPath.split('/').pop() || 'unknown';
+      console.log('Selected file name:', fileNameFromPath);
+      
+      // Store path and filename directly - no blob needed
+      setSelectedPath(selectedPath);
+      setFileName(fileNameFromPath);
+      setDialogError(null);
+    } catch (err: any) {
+      console.error('Error selecting file:', err);
+      setDialogError(err instanceof Error ? err.message : 'Failed to select file');
+    }
   };
 
   const handleStartIngestion = async () => {
-    if (!selectedFile) return;
-
-    // For Tauri, we need to get the actual file path
-    // In browser context, we use the file path from the input
-    // For Tauri, we'll use the file path from the input
-    const filePath: string = (selectedFile as any).path || selectedFile.name;
+    if (!selectedPath || !fileName) {
+      console.error('Cannot start ingestion: selectedPath or fileName is missing');
+      return;
+    }
+    
+    console.log('[DROPZONE] Starting ingestion for:', selectedPath, 'fileName:', fileName);
     
     try {
-      await startIngestion(filePath);
+      await startIngestion(selectedPath);
+      console.log('[DROPZONE] Ingestion completed successfully');
+      setDialogError(null);
     } catch (err: any) {
-      console.error('Ingestion error:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Ingestion failed';
+      console.error('[DROPZONE] Ingestion error:', errorMsg, 'Error object:', err);
+      setDialogError(errorMsg);
     }
   };
 
@@ -160,9 +219,6 @@ const VideoDropzone = () => {
 
       {/* Dropzone */}
       <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
         className={`
           relative group cursor-pointer
           border-3 border-dashed rounded-2xl p-12 text-center transition-all duration-300
@@ -172,45 +228,37 @@ const VideoDropzone = () => {
           }
         `}
       >
-        <input
-          type="file"
-          accept=".mp4,.mkv,.mov"
-          onChange={handleFileSelect}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          disabled={isIngesting}
-        />
-        
-        {selectedFile ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-center space-x-4">
-              <div className="w-24 h-16 bg-gray-800 rounded flex items-center justify-center">
-                <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="text-left">
-                <p className="font-semibold text-gray-900">{selectedFile.name}</p>
-                <p className="text-sm text-gray-500">
-                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleStartIngestion}
-              disabled={isIngesting}
-              className={`
-                px-8 py-3 rounded-lg font-medium transition-colors
-                ${isIngesting
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-blue-600 text-white hover:bg-blue-700'
-                }
-              `}
-            >
-              {isIngesting ? 'Processing...' : 'Start Ingestion'}
-            </button>
-          </div>
-        ) : (
+         {selectedPath ? (
+           <div className="space-y-4">
+             <div className="flex items-center justify-center space-x-4">
+               <div className="w-24 h-16 bg-gray-800 rounded flex items-center justify-center">
+                 <svg className="w-12 h-12 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                 </svg>
+               </div>
+               <div className="text-left">
+                 <p className="font-semibold text-gray-900">{fileName}</p>
+                 <p className="text-sm text-gray-500">
+                   {selectedPath}
+                 </p>
+               </div>
+             </div>
+             <button
+               onClick={handleStartIngestion}
+               disabled={isIngesting}
+               className={`
+                 px-8 py-3 rounded-lg font-medium transition-colors
+                 ${isIngesting
+                   ? 'bg-gray-400 cursor-not-allowed'
+                   : 'bg-blue-600 text-white hover:bg-blue-700'
+                 }
+               `}
+             >
+               {isIngesting ? 'Processing...' : 'Start Ingestion'}
+             </button>
+           </div>
+         ) : (
           <div className="space-y-4">
             <div className="mx-auto w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center">
               <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,12 +281,12 @@ const VideoDropzone = () => {
       </div>
 
       {/* Error Display */}
-      {error && (
+      {(error || dialogError) && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center">
           <svg className="w-5 h-5 text-red-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p className="text-red-700">{error}</p>
+          <p className="text-red-700">{error || dialogError}</p>
         </div>
       )}
 

@@ -40,6 +40,7 @@ pub enum IngestionProgress {
     Probing { progress: f32 },
     ExtractingAudio { progress: f32 },
     ExtractingFrames { progress: f32, current_frame: usize, total_frames: usize },
+    Info { message: String },
     Complete { result: IngestionResult },
     Failed { error_message: String },
 }

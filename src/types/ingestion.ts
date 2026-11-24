@@ -29,6 +29,7 @@ export type IngestionProgress =
   | { stage: "probing"; payload: { progress: number } }
   | { stage: "extractingAudio"; payload: { progress: number } }
   | { stage: "extractingFrames"; payload: { progress: number; currentFrame: number; totalFrames: number } }
+  | { stage: "info"; payload: { message: string } }
   | { stage: "complete"; payload: { result: IngestionResult } }
   | { stage: "failed"; payload: { errorMessage: string } };
 

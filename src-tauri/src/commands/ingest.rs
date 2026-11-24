@@ -83,14 +83,22 @@ pub fn ingest_video(
     let audio_path = audio_dir.join("track_16k_mono.wav");
     let _ = app.emit("ingestion-progress", IngestionProgress::ExtractingAudio { progress: 0.0 });
     
-    if let Err(e) = extract_audio(source_path, &audio_path) {
-        let _ = app.emit("ingestion-progress", IngestionProgress::Failed {
-            error_message: format!("Failed to extract audio: {}", e),
-        });
-        return Err(format!("Failed to extract audio: {}", e));
+    match extract_audio(source_path, &audio_path) {
+        Ok(has_audio) => {
+            let _ = app.emit("ingestion-progress", IngestionProgress::ExtractingAudio { progress: 1.0 });
+            if !has_audio {
+                let _ = app.emit("ingestion-progress", IngestionProgress::Info {
+                    message: "No audio track found in video. Generated silent audio track.".to_string(),
+                });
+            }
+        }
+        Err(e) => {
+            let _ = app.emit("ingestion-progress", IngestionProgress::Failed {
+                error_message: format!("Failed to extract audio: {}", e),
+            });
+            return Err(format!("Failed to extract audio: {}", e));
+        }
     }
-    
-    let _ = app.emit("ingestion-progress", IngestionProgress::ExtractingAudio { progress: 1.0 });
     
     // Step 3: Extract frames
     let total_frames = (metadata.duration_seconds / config.interval_seconds).ceil() as usize;

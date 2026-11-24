@@ -129,13 +129,58 @@ fn parse_fps(fps_str: Option<&str>) -> Option<f64> {
 
 /// Extract audio track from video file using ffmpeg.
 /// Converts to 16kHz, mono, 16-bit WAV format suitable for Whisper.
-pub fn extract_audio(source: &Path, destination: &Path) -> Result<(), IngestionError> {
+/// Returns Ok(()) if audio was extracted, Ok(false) if video has no audio stream.
+pub fn extract_audio(source: &Path, destination: &Path) -> Result<bool, IngestionError> {
     // Ensure destination directory exists
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| IngestionError::AudioExtractionFailed(e.to_string()))?;
     }
 
+    // First check if the video has an audio stream
+    let probe_output = Command::new("ffprobe")
+        .args([
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_streams",
+            source.to_str().unwrap_or(""),
+        ])
+        .output()
+        .map_err(|e| IngestionError::AudioExtractionFailed(e.to_string()))?;
+
+    let probe_json: serde_json::Value = serde_json::from_str(&String::from_utf8_lossy(&probe_output.stdout))
+        .map_err(|e| IngestionError::AudioExtractionFailed(format!("Failed to parse ffprobe: {}", e)))?;
+
+    let streams = probe_json["streams"].as_array().ok_or_else(|| {
+        IngestionError::AudioExtractionFailed("No streams found in video".to_string())
+    })?;
+
+    let has_audio_stream = streams.iter().any(|s| s["codec_type"].as_str() == Some("audio"));
+
+    if !has_audio_stream {
+        // Video has no audio stream - create a silent audio track
+        // Using ffmpeg's anullsrc to generate silent audio
+        let output = Command::new("ffmpeg")
+            .args([
+                "-y",
+                "-f", "lavfi",
+                "-i", "anullsrc=channel_layout=mono:sample_rate=16000:duration=1",
+                "-c:a", "pcm_s16le",
+                destination.to_str().unwrap_or(""),
+            ])
+            .output()
+            .map_err(|e| IngestionError::AudioExtractionFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            return Err(IngestionError::AudioExtractionFailed(
+                String::from_utf8_lossy(&output.stderr).to_string(),
+            ));
+        }
+
+        return Ok(false);
+    }
+
+    // Video has audio - extract it
     let output = Command::new("ffmpeg")
         .args([
             "-y",
@@ -159,7 +204,7 @@ pub fn extract_audio(source: &Path, destination: &Path) -> Result<(), IngestionE
         ));
     }
 
-    Ok(())
+    Ok(true)
 }
 
 /// Extract keyframes from video at specified interval.
